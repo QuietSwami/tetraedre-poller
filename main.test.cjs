@@ -16,7 +16,7 @@ const now = 1710000000;
 const config = {
     url: 'https://example.test/io/web_service_json.php', username: 'user', dossierId: '123',
     encryptedPassword: '09da4e416785b0270a63e17e8b1313f4e29b814071892fe528060b17c1f0cf09',
-    meteringCode: 'AR_EXACT', media: 7, unit: 'mm', startTimestamp: now - 3600,
+    meteringCode: 'AR_EXACT', media: '7', unit: 'mm', startTimestamp: now - 3600,
     windowSeconds: 3600,
 };
 function invoke(event, { params = config, storage = {}, session = {}, fetchResp, service } = {}) {
@@ -27,6 +27,18 @@ function invoke(event, { params = config, storage = {}, session = {}, fetchResp,
     vm.runInNewContext(code, context);
     return context;
 }
+test('parameter enum values satisfy the platform schema', () => {
+    const openapi = JSON.parse(readFileSync(`${__dirname}/../docs/openapi-schema.json`, 'utf8'));
+    const profileSchema = openapi.paths['/rest/device-profiles'].post.requestBody.content['application/json'].schema;
+    const itemType = profileSchema.$defs.emptyOrJsonSchemaSchema.properties.enum.items.type;
+    const params = JSON.parse(readFileSync(`${__dirname}/parametersSchema.json`, 'utf8'));
+    for (const [field, definition] of Object.entries(params.properties)) {
+        for (const [index, value] of (definition.enum || []).entries()) {
+            assert.equal(typeof value, itemType, `Parameter /parametersSchema/properties/${field}/enum/${index} is of wrong type`);
+        }
+    }
+});
+
 test('official profile layout and named modules are consistent', () => {
     const profile = JSON.parse(readFileSync(`${__dirname}/profile.json`, 'utf8'));
     const params = JSON.parse(readFileSync(`${__dirname}/parametersSchema.json`, 'utf8'));
@@ -36,6 +48,8 @@ test('official profile layout and named modules are consistent', () => {
     assert.equal(profile.periodicTickPeriod, 5);
     assert.equal(profile.minNumOfConnections, 0);
     assert.equal(params.properties.encryptedPassword.$uiSchemaObject.security, 'secret');
+    assert.equal(params.properties.media.type, 'string');
+    assert.deepEqual(params.properties.media.enum, ['3', '6', '7', '16']);
     assert.deepEqual(services.map(s => s.name), ['checkAccess', 'pollNow']);
     for (const moduleName of ['main', 'poller', 'sha256', 'types']) {
         const source = readFileSync(`${__dirname}/${moduleName}.ts`, 'utf8');
@@ -57,6 +71,8 @@ test('challenge matches TDS manual vector and standard SHA-256', () => {
     assert.equal(p.operation, 'get_values');
     assert.equal(p.metering_code, config.meteringCode);
     assert.equal(p.media, 7);
+    assert.equal(typeof p.media, 'number');
+    assert.equal(ctx.session.pending.media, 7);
     assert.equal(p.Format, 1);
     assert.equal(p.t0, now - 3600);
     assert.equal(p.t1, now - 1);

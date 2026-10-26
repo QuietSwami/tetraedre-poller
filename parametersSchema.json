@@ -6,7 +6,7 @@
     "dossierId": { "type": "string", "title": "TDS dossier ID" },
     "encryptedPassword": { "type": "string", "title": "TDS encrypted password", "pattern": "^[0-9a-fA-F]{64}$", "$uiSchemaObject": { "security": "secret" } },
     "meteringCode": { "type": "string", "title": "Exact TDS metering code", "description": "Not a station prefix, e.g. AR_ is insufficient" },
-    "media": { "type": "integer", "title": "TDS media", "enum": [3, 6, 7, 16] },
+    "media": { "type": "string", "title": "TDS media", "description": "Select the TDS media identifier; sent to TDS as a number", "enum": ["3", "6", "7", "16"] },
     "unit": { "type": "string", "title": "Verified TDS measurement unit", "description": "Check the real unit in TDS; media 16 is not necessarily m3/s" },
     "startTimestamp": { "type": "integer", "title": "First timestamp (UTC Unix seconds)", "minimum": 0 },
     "windowSeconds": { "type": "integer", "title": "Request window (seconds)", "minimum": 60, "maximum": 86400, "default": 3600 }

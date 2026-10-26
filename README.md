@@ -11,7 +11,7 @@ Create one device for each **confirmed exact** TDS metering code and available m
 - `url`: full HTTPS TDS endpoint (`.../io/web_service_json.php`), not the public demo server.
 - `username`, `dossierId`, and TDS `encryptedPassword` supplied by the TDS administrator. The last is a FlintCORE **secret** parameter; do not put values in source code or logs.
 - `meteringCode`: complete TDS measurement code, not `AR_`, `VX_` etc. station prefixes from the email.
-- `media`: 7 for rain, 3 temperature, 6 river level, 16 flow (if that station has it). `unit`: confirm in TDS for each series; media 16 has ambiguous generic units.
+- `media`: choose `7` for rain, `3` temperature, `6` river level, or `16` flow (if that station has it). DMP's profile schema requires **string enum values**; the handler converts the chosen string to a number for TDS. `unit`: confirm in TDS for each series; media 16 has ambiguous generic units.
 - `startTimestamp`: first desired UTC Unix timestamp **in seconds**. Default `windowSeconds` is 3600; adjust to stay under 1000 readings per response.
 
 Run `checkAccess`, then `pollNow`, and inspect the live log/upstream messages. The handler runs once per tick (5 minutes), processes one window, and catches up gradually. To test the access response separately, use the service; `checkAccess` does not prove owner-group access—only a successful `get_values` does. Never commit credentials or paste the full authenticated POST body into logs/tickets.

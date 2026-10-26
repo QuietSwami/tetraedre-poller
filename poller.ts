@@ -7,11 +7,14 @@ function config(): PollConfig {
     if (typeof p.username !== "string" || !p.username || typeof p.dossierId !== "string" || !p.dossierId) throw new Error("Configure username and dossierId");
     if (typeof p.encryptedPassword !== "string" || !/^[0-9a-f]{64}$/i.test(p.encryptedPassword)) throw new Error("Configure a 64-character encryptedPassword");
     if (typeof p.meteringCode !== "string" || !/^[A-Za-z0-9_-]{2,100}$/.test(p.meteringCode) || p.meteringCode.endsWith("_")) throw new Error("Configure an exact meteringCode, not a prefix");
-    if (![3, 6, 7, 16].includes(p.media)) throw new Error("Invalid media");
+    // The profile schema uses string enum values (DMP requires string enum items),
+    // while the TDS JSON API expects a numeric media identifier.
+    const media = typeof p.media === "string" && /^(3|6|7|16)$/.test(p.media) ? Number(p.media) : p.media;
+    if (![3, 6, 7, 16].includes(media)) throw new Error("Invalid media");
     if (typeof p.unit !== "string" || !p.unit.trim() || p.unit.length > 30) throw new Error("Configure the verified measurement unit");
     if (!Number.isSafeInteger(p.startTimestamp) || p.startTimestamp < 0) throw new Error("Configure startTimestamp in Unix seconds");
     if (!Number.isSafeInteger(p.windowSeconds) || p.windowSeconds < 60 || p.windowSeconds > 86400) throw new Error("windowSeconds must be 60..86400");
-    return p as PollConfig;
+    return { ...p, media } as PollConfig;
 }
 
 function fingerprint(c: PollConfig): string {
