@@ -1,0 +1,22 @@
+{
+    "profile_uuid": "c77fd9bb-a22f-44e1-8a4c-27264c692f7a",
+    "shared_with_all_users": false,
+    "profile_name": "TetraedreDataPoller",
+    "description": "Poll an exact TDS metering code and media over HTTPS; publish timestamped readings upstream.",
+    "notes": "One device per exact meteringCode/media. Set the TDS encrypted password as a secret parameter. See README.md before deployment.",
+    "version": "0.1.0",
+    "deviceType": "custom",
+    "subscribedEvents": "OnTick,OnFetchResp,OnService",
+    "periodicTickPeriod": 5,
+    "minNumOfConnections": 0,
+    "maxNumOfConnections": 0,
+    "eventHandlerTestCases": [],
+    "eventHandlerLanguage": "typescript",
+    "isProtobuf": false,
+    "ulProtobufSchema": "",
+    "dlProtobufSchema": "",
+    "ulProtobufSchemaName": "",
+    "dlProtobufSchemaName": "",
+    "ulMQTTTopicName": "",
+    "dlMQTTTopicName": ""
+}

@@ -1,0 +1,4 @@
+[
+  { "name": "checkAccess", "show_on_ui": true, "confirm": false, "description": "Test TDS export permission; also test get_values to verify measurement owner-group access." },
+  { "name": "pollNow", "show_on_ui": true, "confirm": false, "description": "Poll the next configured time window now." }
+]
