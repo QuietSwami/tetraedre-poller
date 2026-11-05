@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } = require('node:fs');
+const { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync, readdirSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -32,15 +32,29 @@ function invoke(event, { params = config, storage = {}, session = {}, fetchResp,
     return context;
 }
 test('parameter enum values satisfy the platform schema', () => {
-    const openapi = JSON.parse(readFileSync(`${__dirname}/../docs/openapi-schema.json`, 'utf8'));
-    const profileSchema = openapi.paths['/rest/device-profiles'].post.requestBody.content['application/json'].schema;
-    const itemType = profileSchema.$defs.emptyOrJsonSchemaSchema.properties.enum.items.type;
+    // FlintCORE's device-profile schema accepts string enum entries only.
+    // Do not depend on the parent workspace's OpenAPI file: this is a standalone Git repo.
+    const itemType = 'string';
     const params = JSON.parse(readFileSync(`${__dirname}/parametersSchema.json`, 'utf8'));
     for (const [field, definition] of Object.entries(params.properties)) {
         for (const [index, value] of (definition.enum || []).entries()) {
             assert.equal(typeof value, itemType, `Parameter /parametersSchema/properties/${field}/enum/${index} is of wrong type`);
         }
     }
+});
+
+test('Git importer sees only four top-level TypeScript modules', () => {
+    const modules = [];
+    function findTsFiles(dir, prefix = '') {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            if (entry.name === '.git') continue;
+            const relative = prefix + entry.name;
+            if (entry.isDirectory()) findTsFiles(join(dir, entry.name), relative + '/');
+            else if (relative.endsWith('.ts')) modules.push(relative);
+        }
+    }
+    findTsFiles(__dirname);
+    assert.deepEqual(modules.sort(), ['main.ts', 'poller.ts', 'sha256.ts', 'types.ts']);
 });
 
 test('official profile layout and named modules are consistent', () => {

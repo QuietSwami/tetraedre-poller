@@ -1,10 +1,10 @@
 # Tetraedre poller for FlintCORE (DMP)
 
-Read [`docs/FLINTCORE_TETRAEDRE.md`](../docs/FLINTCORE_TETRAEDRE.md) for the source analysis, decisions, open questions and staged rollout plan. The current FlintCORE reference is [`docs/DMP-Customer-Manual-en.pdf`](../docs/DMP-Customer-Manual-en.pdf), especially §§2.4, 7.2, 12.4 and 12.6.
+The broader workspace includes `docs/FLINTCORE_TETRAEDRE.md` (analysis and rollout plan) and the 2026 `docs/DMP-Customer-Manual-en.pdf` (especially §§2.4, 7.2, 12.4 and 12.6). Those documents are not part of this standalone Git repository.
 
 ## Use
 
-Create a **device profile** in the FlintCORE profile editor. This directory follows the [official `dmp-device-profiles` layout](https://github.com/orbiwise-sa/dmp-device-profiles): `profile.json` for profile metadata, separate `parametersSchema.json`, `stateSchema.json`, `services.json`, and one file per TypeScript module. Apply the JSON files in their corresponding editor sections and create **four modules** with these exact names (without `.ts`): `main`, `poller`, `sha256`, `types`. Paste each file's content into its module; `main` is the mandatory entry point and imports `poller`, which imports `sha256` and `types` by module name. Do **not** paste only `main.ts`: without its dependencies it cannot run. `profile.json` is *not* a complete `POST /rest/device-profiles` payload by itself. The checked-in `profile_uuid` identifies this profile; generate a different UUID if creating an independent copy. Use the editor's test functionality before saving or deploying. Set no connections.
+Create a **device profile** in the FlintCORE profile editor. This directory follows the [official `dmp-device-profiles` layout](https://github.com/orbiwise-sa/dmp-device-profiles): `profile.json` for profile metadata, separate `parametersSchema.json`, `stateSchema.json`, `services.json`, and one file per TypeScript module. When importing **this Git repository**, the only `.ts` files are `main.ts`, `poller.ts`, `sha256.ts` and `types.ts` at the root. Their DMP module names must be the corresponding bare names: `main`, `poller`, `sha256`, `types`. Test-only TypeScript declarations were removed from the repository tree because the Git importer treated the nested path as an invalid module name. If configuring manually, paste all four files into those named modules; `main` imports `poller`, which imports `sha256` and `types`. `profile.json` is *not* a complete `POST /rest/device-profiles` payload by itself. The checked-in `profile_uuid` identifies this profile; generate a different UUID if creating an independent copy. Use the editor's test functionality before saving or deploying. Set no connections.
 
 Create one device for each **confirmed exact** TDS metering code and available media, with these device parameters:
 
@@ -21,7 +21,7 @@ Run `checkAccess`, then `pollNow`, and inspect the live log/upstream messages. T
 The 2026 FlintCORE manual (§7.2.3.2) documents a **separate** JSONL message import path with a top-level Unix-**microsecond** timestamp. After registering the target device, save a single bounded, authorized TDS `get_values` **format-1** response to a private JSON file and convert it offline (no TDS/FlintCORE credentials needed by the converter):
 
 ```sh
-node TetraedrePoller/backfill-jsonl.cjs \
+node backfill-jsonl.cjs \
   --device-uuid 'YOUR-REGISTERED-DEVICE-UUID' \
   --metering-code 'YOUR-EXACT-TDS-CODE' --media 7 --unit mm \
   --t0 1709852400 --t1 1709938800 \
@@ -30,4 +30,4 @@ node TetraedrePoller/backfill-jsonl.cjs \
 
 Use the actual inclusive `t0`/`t1` of that TDS request; the converter rejects unauthorized, malformed, unsorted or out-of-window readings and verifies all rows before writing output. Upload the `.jsonl` via Devices → Import (`/app/import`) and check `/app/import-jobs` for failures. Start with a small pilot; the manual recommends exporting a real device/message first to confirm the import shape in your tenant. Don't upload both JSONL and live-poller data for the **same** period without an explicit deduplication strategy. Do not put TDS secrets in JSONL import records.
 
-Before importing handler modules, run `npx --yes --package typescript@5.9.3 tsc --project TetraedrePoller/tests/tsconfig.json` to check TypeScript against locally declared sandbox globals; these declarations are for tests only, not a substitute for the tenant's live type definitions. Run behavior tests with `node --test TetraedrePoller/main.test.cjs` (Node 22+). The local test loader simulates DMP's named-module imports; production uses the platform's module resolver. A successful local test does **not** mean the target server supports the requested format or FlintCORE's sandbox accepts this handler: validate in the target tenant before rollout.
+From this Git repository's root, run `node tests/typecheck.cjs` to check TypeScript against temporary sandbox globals (uses `npx` and TypeScript 5.9.3); these declarations are for local tests only, not a substitute for the tenant's live type definitions. Run behavior tests with `node --test main.test.cjs` (Node 22+). The local test loader simulates DMP's named-module imports; production uses the platform's module resolver. A successful local test does **not** mean the target server supports the requested format or FlintCORE's sandbox accepts this handler: validate in the target tenant before rollout.
