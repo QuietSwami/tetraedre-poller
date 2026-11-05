@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "baseUrl": "..",
+    "skipLibCheck": true
+  },
+  "files": ["../main.ts", "../poller.ts", "../sha256.ts", "../types.ts", "./globals.d.ts"]
+}

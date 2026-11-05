@@ -8,9 +8,9 @@ Create a **device profile** in the FlintCORE profile editor. This directory foll
 
 Create one device for each **confirmed exact** TDS metering code and available media, with these device parameters:
 
-- `url`: full HTTPS TDS endpoint (`.../io/web_service_json.php`), not the public demo server.
+- `url`: full HTTPS TDS endpoint (`.../io/web_service_json.php`), not the public demo server. The handler separately checks this shape in `poller.ts`; changing the parameter schema's `pattern` alone does not change that runtime check. If OCEau supplies a different URL shape, confirm the actual JSON API endpoint before adapting both checks.
 - `username`, `dossierId`, and TDS `encryptedPassword` supplied by the TDS administrator. The last is a FlintCORE **secret** parameter; do not put values in source code or logs.
-- `meteringCode`: complete TDS measurement code, not `AR_`, `VX_` etc. station prefixes from the email.
+- `meteringCode`: the TDS metering code as given by the station owner; codes such as `AV_` and `VX_` have trailing underscores, which the handler accepts. For `AV_`, the public site displays measurement set ID 23, but verify that the authenticated API accepts `AV_` for your account.
 - `media`: choose `7` for rain, `3` temperature, `6` river level, or `16` flow (if that station has it). DMP's profile schema requires **string enum values**; the handler converts the chosen string to a number for TDS. `unit`: confirm in TDS for each series; media 16 has ambiguous generic units.
 - `startTimestamp`: first desired UTC Unix timestamp **in seconds**. Default `windowSeconds` is 3600; adjust to stay under 1000 readings per response.
 
@@ -30,4 +30,4 @@ node TetraedrePoller/backfill-jsonl.cjs \
 
 Use the actual inclusive `t0`/`t1` of that TDS request; the converter rejects unauthorized, malformed, unsorted or out-of-window readings and verifies all rows before writing output. Upload the `.jsonl` via Devices → Import (`/app/import`) and check `/app/import-jobs` for failures. Start with a small pilot; the manual recommends exporting a real device/message first to confirm the import shape in your tenant. Don't upload both JSONL and live-poller data for the **same** period without an explicit deduplication strategy. Do not put TDS secrets in JSONL import records.
 
-Run local tests with `node --test TetraedrePoller/main.test.cjs` (Node 22+). The local test loader simulates DMP's named-module imports; production uses the platform's module resolver. A successful local test does **not** mean the target server supports the requested format or FlintCORE's sandbox accepts this handler: validate in the target tenant before rollout.
+Before importing handler modules, run `npx --yes --package typescript@5.9.3 tsc --project TetraedrePoller/tests/tsconfig.json` to check TypeScript against locally declared sandbox globals; these declarations are for tests only, not a substitute for the tenant's live type definitions. Run behavior tests with `node --test TetraedrePoller/main.test.cjs` (Node 22+). The local test loader simulates DMP's named-module imports; production uses the platform's module resolver. A successful local test does **not** mean the target server supports the requested format or FlintCORE's sandbox accepts this handler: validate in the target tenant before rollout.

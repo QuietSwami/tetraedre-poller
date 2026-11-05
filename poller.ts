@@ -6,7 +6,7 @@ function config(): PollConfig {
     if (!p || typeof p.url !== "string" || !/^https:\/\/[^/?#]+\/io\/web_service_json\.php$/.test(p.url)) throw new Error("Configure an HTTPS TDS endpoint ending in /io/web_service_json.php");
     if (typeof p.username !== "string" || !p.username || typeof p.dossierId !== "string" || !p.dossierId) throw new Error("Configure username and dossierId");
     if (typeof p.encryptedPassword !== "string" || !/^[0-9a-f]{64}$/i.test(p.encryptedPassword)) throw new Error("Configure a 64-character encryptedPassword");
-    if (typeof p.meteringCode !== "string" || !/^[A-Za-z0-9_-]{2,100}$/.test(p.meteringCode) || p.meteringCode.endsWith("_")) throw new Error("Configure an exact meteringCode, not a prefix");
+    if (typeof p.meteringCode !== "string" || !/^[A-Za-z0-9_-]{2,100}$/.test(p.meteringCode)) throw new Error("Configure a valid TDS meteringCode");
     // The profile schema uses string enum values (DMP requires string enum items),
     // while the TDS JSON API expects a numeric media identifier.
     const media = typeof p.media === "string" && /^(3|6|7|16)$/.test(p.media) ? Number(p.media) : p.media;
@@ -65,16 +65,22 @@ export function handleOnService(): void {
     } else if (args.service?.pollNow) handleOnTick();
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 export function handleOnFetchResp(): void {
     const pending = session.pending;
     session.pending = undefined;
     if (!pending) { fail("Unexpected fetch response"); return; }
     const resp = args.fetchResp;
-    if (!resp || !Number.isInteger(resp.statusCode) || resp.statusCode < 200 || resp.statusCode >= 300) { fail("HTTP request failed"); return; }
-    let body = resp.body;
+    const status = resp?.statusCode;
+    if (typeof status !== "number" || !Number.isInteger(status) || status < 200 || status >= 300) { fail("HTTP request failed"); return; }
+    let body: unknown = resp?.body;
     if (typeof body === "string") {
         try { body = JSON.parse(body); } catch { fail("Invalid JSON response"); return; }
     }
+    if (!isRecord(body)) { fail("Unexpected TDS response body"); return; }
     if (pending.operation === "check_access") {
         if (body && body.access_granted == 1 && body.export_data == 1) {
             log("[TDS] Access and export_data confirmed; measurement-set owner-group access still needs a get_values test");
@@ -84,7 +90,7 @@ export function handleOnFetchResp(): void {
     }
     // Format=1 is specified as an object with access_granted and Values. Refuse bare
     // arrays (format=0) because they do not report access status explicitly.
-    if (!body || Array.isArray(body) || body.access_granted != 1 || !Array.isArray(body.Values ?? body.values)) { fail("Access denied or unexpected get_values response (format=1 required)"); return; }
+    if (body.access_granted != 1 || !Array.isArray(body.Values ?? body.values)) { fail("Access denied or unexpected get_values response (format=1 required)"); return; }
     const rows = (body.Values ?? body.values) as Row[];
     if (rows.length > 1000) { fail("Window returned >1000 values; reduce windowSeconds (cursor unchanged)"); return; }
     const upstream: object[] = [];

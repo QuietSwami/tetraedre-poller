@@ -103,7 +103,7 @@ test('empty response advances; malformed, excessive, and denied responses do not
     const first = invoke('OnTick');
     const good = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 200, body: JSON.stringify({ access_granted: 1, Values: [] }) } });
     assert.equal(good.result.storage.nextTimestamp, now);
-    for (const body of [[], { access_granted: 0, Values: [] }, { access_granted: 1, Values: [{ timestamp: now + 2, value: '1' }] },
+    for (const body of [[], '[]', '42', '{broken', { access_granted: 0, Values: [] }, { access_granted: 1, Values: [{ timestamp: now + 2, value: '1' }] },
         { access_granted: 1, Values: [{ timestamp: now - 1, value: null }] },
         { access_granted: 1, Values: [{ timestamp: now - 1, value: false }] },
         { access_granted: 1, Values: Array.from({ length: 1001 }, () => ({ timestamp: now - 1, value: 1 })) }]) {
@@ -114,12 +114,22 @@ test('empty response advances; malformed, excessive, and denied responses do not
     }
 });
 
+test('AV_ from the station list is accepted verbatim as a metering code', () => {
+    const ctx = invoke('OnTick', { params: { ...config, meteringCode: 'AV_', media: '16', unit: 'm3/s' } });
+    assert.equal(decodedFetch(ctx).metering_code, 'AV_');
+    assert.equal(decodedFetch(ctx).media, 16);
+    assert.equal(convert({ access_granted: 1, Values: [{ timestamp: now - 1, value: '0.21' }] }, {
+        deviceUuid: '11111111-2222-3333-4444-555555555555', meteringCode: 'AV_',
+        media: '16', unit: 'm3/s', t0: now - 3600, t1: now,
+    }).length, 1);
+});
+
 test('HTTP failure and missing credentials cannot advance or fetch', () => {
     const first = invoke('OnTick');
     const failed = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 403 } });
     assert.equal(failed.result.storage, undefined);
     assert.equal(failed.result.operationalStatus, 'warning');
-    const invalid = invoke('OnTick', { params: { ...config, meteringCode: 'AR_' } });
+    const invalid = invoke('OnTick', { params: { ...config, meteringCode: 'AV_?' } });
     assert.equal(invalid.result.fetch, undefined);
     assert.equal(invalid.result.operationalStatus, 'warning');
 });
@@ -160,7 +170,7 @@ test('backfill CLI writes JSONL only after validating the entire response', () =
 test('checkAccess verifies export_data and does not move cursor', () => {
     const first = invoke('OnService', { service: { checkAccess: {} } });
     assert.equal(decodedFetch(first).operation, 'check_access');
-    const resp = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 200, body: { access_granted: 1, export_data: '1' } } });
+    const resp = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 200, body: JSON.stringify({ access_granted: 1, export_data: '1' }) } });
     assert.equal(resp.result.operationalStatus, 'normal');
     assert.equal(resp.result.storage, undefined);
 });

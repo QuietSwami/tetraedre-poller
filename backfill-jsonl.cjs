@@ -6,7 +6,7 @@ const { readFileSync } = require('node:fs');
 function convert(body, options) {
     const { deviceUuid, meteringCode, media, unit, t0, t1 } = options;
     if (typeof deviceUuid !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(deviceUuid)) throw new Error('Invalid device UUID');
-    if (typeof meteringCode !== 'string' || !/^[A-Za-z0-9_-]{2,100}$/.test(meteringCode) || meteringCode.endsWith('_')) throw new Error('Use an exact metering code');
+    if (typeof meteringCode !== 'string' || !/^[A-Za-z0-9_-]{2,100}$/.test(meteringCode)) throw new Error('Use a valid TDS metering code');
     if (![3, 6, 7, 16].includes(Number(media)) || !/^(3|6|7|16)$/.test(String(media))) throw new Error('Invalid media');
     if (typeof unit !== 'string' || !unit.trim() || unit.length > 30) throw new Error('Provide the verified unit');
     if (!Number.isSafeInteger(t0) || !Number.isSafeInteger(t1) || t0 < 0 || t0 > t1) throw new Error('Provide an inclusive Unix-seconds t0/t1 window');
