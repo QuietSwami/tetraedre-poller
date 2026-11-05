@@ -91,13 +91,16 @@ export function handleOnFetchResp(): void {
     let previous = pending.start - 1;
     for (const row of rows) {
         const t = Number(row?.timestamp), v = Number(row?.value);
-        if (!Number.isSafeInteger(t) || t < pending.start || t > pending.end || t < previous || row.value === null || (typeof row.value === "string" && !row.value.trim()) || !Number.isFinite(v)) {
+        if (!Number.isSafeInteger(t) || t < pending.start || t > pending.end || t < previous || !["string", "number"].includes(typeof row.value) || (typeof row.value === "string" && !row.value.trim()) || !Number.isFinite(v)) {
             fail("Malformed, unsorted, or out-of-window TDS reading (cursor unchanged)"); return;
         }
+        const sourceTimestampUs = t * 1000000;
+        if (!Number.isSafeInteger(sourceTimestampUs)) { fail("Source timestamp exceeds safe microsecond precision (cursor unchanged)"); return; }
         previous = t;
         upstream.push({ type: "object", object: {
             source: "tetraedre", meteringCode: pending.meteringCode, media: pending.media,
-            timestamp: t * 1000, value: v, unit: pending.unit,
+            // Payload fields only; upstream's message timestamp is assigned by FlintCORE.
+            timestamp: t * 1000, sourceTimestampUs, value: v, unit: pending.unit,
         }});
     }
     if (upstream.length) result.upstream = upstream;

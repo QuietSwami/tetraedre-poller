@@ -1,6 +1,6 @@
 # Tetraedre poller for FlintCORE (DMP)
 
-Read [`docs/FLINTCORE_TETRAEDRE.md`](../docs/FLINTCORE_TETRAEDRE.md) for the source analysis, decisions, open questions and staged rollout plan.
+Read [`docs/FLINTCORE_TETRAEDRE.md`](../docs/FLINTCORE_TETRAEDRE.md) for the source analysis, decisions, open questions and staged rollout plan. The current FlintCORE reference is [`docs/DMP-Customer-Manual-en.pdf`](../docs/DMP-Customer-Manual-en.pdf), especially §§2.4, 7.2, 12.4 and 12.6.
 
 ## Use
 
@@ -14,6 +14,20 @@ Create one device for each **confirmed exact** TDS metering code and available m
 - `media`: choose `7` for rain, `3` temperature, `6` river level, or `16` flow (if that station has it). DMP's profile schema requires **string enum values**; the handler converts the chosen string to a number for TDS. `unit`: confirm in TDS for each series; media 16 has ambiguous generic units.
 - `startTimestamp`: first desired UTC Unix timestamp **in seconds**. Default `windowSeconds` is 3600; adjust to stay under 1000 readings per response.
 
-Run `checkAccess`, then `pollNow`, and inspect the live log/upstream messages. The handler runs once per tick (5 minutes), processes one window, and catches up gradually. To test the access response separately, use the service; `checkAccess` does not prove owner-group access—only a successful `get_values` does. Never commit credentials or paste the full authenticated POST body into logs/tickets.
+Run `checkAccess`, then `pollNow`, and inspect the live log/upstream messages. The handler runs once per tick (5 minutes), processes one window, and catches up gradually. To test the access response separately, use the service; `checkAccess` does not prove owner-group access—only a successful `get_values` does. Never commit credentials or paste the full authenticated POST body into logs/tickets. **Important:** the upstream object's `timestamp` (milliseconds) and `sourceTimestampUs` (microseconds) are *payload fields*; they do not set the indexed FlintCORE message timestamp. For source-time-indexed historical data, use the separate batch import process below.
+
+## Historical backfill (optional; do not overlap with live polling)
+
+The 2026 FlintCORE manual (§7.2.3.2) documents a **separate** JSONL message import path with a top-level Unix-**microsecond** timestamp. After registering the target device, save a single bounded, authorized TDS `get_values` **format-1** response to a private JSON file and convert it offline (no TDS/FlintCORE credentials needed by the converter):
+
+```sh
+node TetraedrePoller/backfill-jsonl.cjs \
+  --device-uuid 'YOUR-REGISTERED-DEVICE-UUID' \
+  --metering-code 'YOUR-EXACT-TDS-CODE' --media 7 --unit mm \
+  --t0 1709852400 --t1 1709938800 \
+  tds-response.json > messages.jsonl
+```
+
+Use the actual inclusive `t0`/`t1` of that TDS request; the converter rejects unauthorized, malformed, unsorted or out-of-window readings and verifies all rows before writing output. Upload the `.jsonl` via Devices → Import (`/app/import`) and check `/app/import-jobs` for failures. Start with a small pilot; the manual recommends exporting a real device/message first to confirm the import shape in your tenant. Don't upload both JSONL and live-poller data for the **same** period without an explicit deduplication strategy. Do not put TDS secrets in JSONL import records.
 
 Run local tests with `node --test TetraedrePoller/main.test.cjs` (Node 22+). The local test loader simulates DMP's named-module imports; production uses the platform's module resolver. A successful local test does **not** mean the target server supports the requested format or FlintCORE's sandbox accepts this handler: validate in the target tenant before rollout.
