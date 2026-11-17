@@ -11,5 +11,5 @@
     "startTimestamp": { "type": "integer", "title": "First timestamp (UTC Unix seconds)", "minimum": 0 },
     "windowSeconds": { "type": "integer", "title": "Request window (seconds)", "minimum": 60, "maximum": 86400, "default": 3600 }
   },
-  "required": ["url", "username", "dossierId", "encryptedPassword", "meteringCode", "media", "unit", "startTimestamp", "windowSeconds"]
+  "required": ["url", "username", "dossierId", "encryptedPassword", "meteringCode", "media", "unit", "startTimestamp"]
 }

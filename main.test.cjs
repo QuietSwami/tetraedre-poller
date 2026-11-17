@@ -97,6 +97,21 @@ test('challenge matches TDS manual vector and standard SHA-256', () => {
     assert.equal(ctx.result.fetch.method, 'post');
 });
 
+test('omitted windowSeconds defaults to 3600 without accepting invalid explicit values', () => {
+    const schema = JSON.parse(readFileSync(`${__dirname}/parametersSchema.json`, 'utf8'));
+    assert.ok(!schema.required.includes('windowSeconds'));
+    assert.equal(schema.properties.windowSeconds.default, 3600);
+    const { windowSeconds, ...withoutWindow } = config;
+    const tick = invoke('OnTick', { params: withoutWindow });
+    assert.equal(decodedFetch(tick).t0, now - 3600);
+    assert.equal(decodedFetch(tick).t1, now - 1);
+    for (const invalidWindow of [0, 59, 86401, '3600']) {
+        const invalid = invoke('OnTick', { params: { ...config, windowSeconds: invalidWindow } });
+        assert.equal(invalid.result.fetch, undefined);
+        assert.equal(invalid.result.operationalStatus, 'warning');
+    }
+});
+
 test('success publishes historic timestamps and advances cursor over inclusive windows', () => {
     const first = invoke('OnTick');
     const resp = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 200, body: { access_granted: 1, Values: [

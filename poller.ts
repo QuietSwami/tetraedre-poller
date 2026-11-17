@@ -13,8 +13,10 @@ function config(): PollConfig {
     if (![3, 6, 7, 16].includes(media)) throw new Error("Invalid media");
     if (typeof p.unit !== "string" || !p.unit.trim() || p.unit.length > 30) throw new Error("Configure the verified measurement unit");
     if (!Number.isSafeInteger(p.startTimestamp) || p.startTimestamp < 0) throw new Error("Configure startTimestamp in Unix seconds");
-    if (!Number.isSafeInteger(p.windowSeconds) || p.windowSeconds < 60 || p.windowSeconds > 86400) throw new Error("windowSeconds must be 60..86400");
-    return { ...p, media } as PollConfig;
+    // JSON Schema defaults are UI hints, not guaranteed runtime values.
+    const windowSeconds = p.windowSeconds ?? 3600;
+    if (!Number.isSafeInteger(windowSeconds) || windowSeconds < 60 || windowSeconds > 86400) throw new Error("windowSeconds must be 60..86400");
+    return { ...p, media, windowSeconds } as PollConfig;
 }
 
 function fingerprint(c: PollConfig): string {
