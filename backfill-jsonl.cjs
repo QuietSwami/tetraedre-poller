@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Convert ONE saved, format-1 TDS get_values response into FlintCORE historical
+// Convert ONE saved TDS get_values response (format 1 or non-empty format 0) into FlintCORE historical
 // message import records. This does not call TDS or FlintCORE and needs no secrets.
 const { readFileSync } = require('node:fs');
 
@@ -10,8 +10,13 @@ function convert(body, options) {
     if (![3, 6, 7, 16].includes(Number(media)) || !/^(3|6|7|16)$/.test(String(media))) throw new Error('Invalid media');
     if (typeof unit !== 'string' || !unit.trim() || unit.length > 30) throw new Error('Provide the verified unit');
     if (!Number.isSafeInteger(t0) || !Number.isSafeInteger(t1) || t0 < 0 || t0 > t1) throw new Error('Provide an inclusive Unix-seconds t0/t1 window');
-    if (!body || Array.isArray(body) || body.access_granted != 1 || !Array.isArray(body.Values ?? body.values)) throw new Error('Expected authorized TDS format-1 get_values response');
-    const rows = body.Values ?? body.values;
+    let rows;
+    if (Array.isArray(body)) {
+        if (!body.length) throw new Error('Empty format-0 response cannot distinguish no data from denied access');
+        rows = body;
+    } else if (body && body.access_granted == 1 && Array.isArray(body.Values ?? body.values)) {
+        rows = body.Values ?? body.values;
+    } else throw new Error('Expected authorized TDS get_values response');
     if (rows.length > 1000) throw new Error('More than 1000 values; split the source window');
     let previous = t0 - 1;
     return rows.map(row => {

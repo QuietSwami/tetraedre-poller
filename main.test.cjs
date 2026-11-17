@@ -26,7 +26,8 @@ const config = {
 function invoke(event, { params = config, storage = {}, session = {}, fetchResp, service } = {}) {
     const context = {
         args: { event, fetchResp, service }, info: { params, storage }, result: {}, session,
-        Date: class extends Date { static now() { return now * 1000; } }, log() {},
+        logs: [], Date: class extends Date { static now() { return now * 1000; } },
+        log(message) { context.logs.push(message); },
     };
     vm.runInNewContext(code, context);
     return context;
@@ -91,7 +92,8 @@ test('challenge matches TDS manual vector and standard SHA-256', () => {
     assert.equal(p.media, 7);
     assert.equal(typeof p.media, 'number');
     assert.equal(ctx.session.pending.media, 7);
-    assert.equal(p.Format, 1);
+    assert.equal(p.format, 1);
+    assert.equal(p.Format, undefined);
     assert.equal(p.t0, now - 3600);
     assert.equal(p.t1, now - 1);
     assert.equal(ctx.result.fetch.method, 'post');
@@ -144,6 +146,42 @@ test('empty response advances; malformed, excessive, and denied responses do not
     }
 });
 
+test('valid format-0 array publishes readings, but empty or malformed arrays never advance', () => {
+    const first = invoke('OnTick', { params: { ...config, meteringCode: 'AV_', media: '16', unit: 'm3/s' } });
+    const seven = Array.from({ length: 7 }, (_, i) => ({
+        timestamp: String(now - 3600 + i * 300), value: String(1.46 - i * 0.05),
+    }));
+    const pending = { ...first.session };
+    const ok = invoke('OnFetchResp', { session: { ...pending }, fetchResp: { statusCode: 200, body: seven } });
+    assert.equal(ok.result.operationalStatus, 'normal');
+    assert.equal(ok.result.upstream.length, 7);
+    assert.equal(ok.result.upstream[0].object.meteringCode, 'AV_');
+    assert.equal(ok.result.upstream[0].object.media, 16);
+    assert.equal(ok.result.storage.nextTimestamp, now);
+    for (const body of [[], [{ error: 'denied' }], [seven[0], { timestamp: now + 1, value: '1' }]]) {
+        const bad = invoke('OnFetchResp', { session: { ...pending }, fetchResp: { statusCode: 200, body } });
+        assert.equal(bad.result.operationalStatus, 'warning');
+        assert.equal(bad.result.upstream, undefined);
+        assert.equal(bad.result.storage, undefined);
+        if (body.length === 0) assert.match(bad.logs[0], /Empty format-0 response/);
+    }
+});
+
+test('unexpected bodies report only their shape, never their content or credentials', () => {
+    const first = invoke('OnTick');
+    const cases = [
+        { body: null, kind: 'null' },
+        { body: '42', kind: 'number' },
+        { body: '"private response text"', kind: 'string' },
+    ];
+    for (const { body, kind } of cases) {
+        const ctx = invoke('OnFetchResp', { session: { ...first.session }, fetchResp: { statusCode: 200, body } });
+        assert.equal(ctx.result.operationalStatus, 'warning');
+        assert.equal(ctx.result.storage, undefined);
+        assert.deepEqual(ctx.logs, [`[TDS] Unexpected TDS response body (${kind})`]);
+    }
+});
+
 test('AV_ from the station list is accepted verbatim as a metering code', () => {
     const ctx = invoke('OnTick', { params: { ...config, meteringCode: 'AV_', media: '16', unit: 'm3/s' } });
     assert.equal(decodedFetch(ctx).metering_code, 'AV_');
@@ -176,6 +214,10 @@ test('historical JSONL uses the documented microsecond message timestamp', () =>
         timestamp: (now - 2) * 1000, sourceTimestampUs: (now - 2) * 1000000,
         value: 0, unit: 'mm',
     });
+    const legacy = convert(body.Values, options).map(line => JSON.parse(line));
+    assert.equal(legacy.length, 2);
+    assert.equal(legacy[0].timestamp, (now - 2) * 1000000);
+    assert.throws(() => convert([], options), /Empty format-0 response/);
     assert.throws(() => convert({ access_granted: 0, Values: [] }, options));
     assert.throws(() => convert({ access_granted: 1, Values: [{ timestamp: now + 1, value: 5 }] }, options));
     assert.throws(() => convert({ access_granted: 1, Values: [{ timestamp: now, value: false }] }, options));

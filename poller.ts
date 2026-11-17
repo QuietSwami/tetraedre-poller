@@ -55,7 +55,7 @@ export function handleOnTick(): void {
     session.pending = { operation: "get_values", start: next, end, fingerprint: key, media: c.media, meteringCode: c.meteringCode, unit: c.unit };
     request(c, "get_values", {
         metering_code: c.meteringCode, t0: next, t1: end,
-        limit: 0, sort: "ASC", media: c.media, Format: 1,
+        limit: 0, sort: "ASC", media: c.media, format: 1,
     });
 }
 
@@ -82,18 +82,26 @@ export function handleOnFetchResp(): void {
     if (typeof body === "string") {
         try { body = JSON.parse(body); } catch { fail("Invalid JSON response"); return; }
     }
-    if (!isRecord(body)) { fail("Unexpected TDS response body"); return; }
     if (pending.operation === "check_access") {
-        if (body && body.access_granted == 1 && body.export_data == 1) {
+        if (isRecord(body) && body.access_granted == 1 && body.export_data == 1) {
             log("[TDS] Access and export_data confirmed; measurement-set owner-group access still needs a get_values test");
             result.operationalStatus = "normal";
         } else fail("Access denied or export_data missing");
         return;
     }
-    // Format=1 is specified as an object with access_granted and Values. Refuse bare
-    // arrays (format=0) because they do not report access status explicitly.
-    if (body.access_granted != 1 || !Array.isArray(body.Values ?? body.values)) { fail("Access denied or unexpected get_values response (format=1 required)"); return; }
-    const rows = (body.Values ?? body.values) as Row[];
+    let rows: Row[];
+    if (Array.isArray(body)) {
+        // TDS format 0 has no access_granted flag. Non-empty, valid readings prove this
+        // request could read data; an empty array might instead mean denied access.
+        if (body.length === 0) { fail("Empty format-0 response: cannot distinguish no data from denied access"); return; }
+        rows = body as Row[];
+    } else if (isRecord(body)) {
+        if (body.access_granted != 1 || !Array.isArray(body.Values ?? body.values)) { fail("Access denied or unexpected get_values response (format=1 required)"); return; }
+        rows = (body.Values ?? body.values) as Row[];
+    } else {
+        fail(`Unexpected TDS response body (${body === null ? "null" : typeof body})`);
+        return;
+    }
     if (rows.length > 1000) { fail("Window returned >1000 values; reduce windowSeconds (cursor unchanged)"); return; }
     const upstream: { type: "object"; object: Record<string, string | number> }[] = [];
     let previous = pending.start - 1;
