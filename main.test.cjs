@@ -118,6 +118,7 @@ test('success publishes historic timestamps and advances cursor over inclusive w
         { timestamp: now - 3000 + '', value: '0' }, { timestamp: now - 1, value: '2.25' },
     ] } } });
     assert.equal(resp.result.operationalStatus, 'normal');
+    assert.ok(resp.result.upstream.every(m => m.type === 'object' && m.object));
     assert.deepEqual(plain(resp.result.upstream.map(m => m.object.value)), [0, 2.25]);
     assert.equal(resp.result.upstream[0].object.timestamp, (now - 3000) * 1000);
     assert.equal(resp.result.upstream[0].object.sourceTimestampUs, (now - 3000) * 1000000);

@@ -95,7 +95,7 @@ export function handleOnFetchResp(): void {
     if (body.access_granted != 1 || !Array.isArray(body.Values ?? body.values)) { fail("Access denied or unexpected get_values response (format=1 required)"); return; }
     const rows = (body.Values ?? body.values) as Row[];
     if (rows.length > 1000) { fail("Window returned >1000 values; reduce windowSeconds (cursor unchanged)"); return; }
-    const upstream: object[] = [];
+    const upstream: { type: "object"; object: Record<string, string | number> }[] = [];
     let previous = pending.start - 1;
     for (const row of rows) {
         const t = Number(row?.timestamp), v = Number(row?.value);

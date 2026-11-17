@@ -16,9 +16,13 @@ declare const args: {
     service?: Record<string, unknown>;
     fetchResp?: { statusCode?: number; body?: string | object };
 };
+interface MessageBlock {
+    type: 'object' | 'string' | 'octets';
+    object?: object;
+}
 declare const result: {
     fetch?: unknown;
-    upstream?: object[];
+    upstream?: MessageBlock[];
     storage?: unknown;
     operationalStatus?: string;
     touch?: boolean;
