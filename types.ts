@@ -5,7 +5,7 @@ export type PollConfig = {
     encryptedPassword: string;
     meteringCode: string;
     media: number;
-    unit: string;
+    unit: string; // Derived from media by config(); not a device parameter.
     startTimestamp: number;
     windowSeconds: number;
 };

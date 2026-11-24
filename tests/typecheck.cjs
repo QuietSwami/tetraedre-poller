@@ -18,6 +18,7 @@ declare const args: {
 };
 interface MessageBlock {
     type: 'object' | 'string' | 'octets';
+    timestamp?: number; // Operator-confirmed upstream Unix milliseconds override.
     object?: object;
 }
 declare const result: {

@@ -1,6 +1,10 @@
 import { sha256Ascii } from "sha256";
 import type { PollConfig, Cursor, Row } from "types";
 
+// OCEAU station series only. These are labels, not value conversions; generic TDS
+// media 6/16 can use different units outside this deployment.
+const UNIT_BY_MEDIA: Record<number, string> = { 3: "°C", 6: "m", 7: "mm", 16: "m3/s" };
+
 function config(): PollConfig {
     const p = info.params as any;
     if (!p || typeof p.url !== "string" || !/^https:\/\/[^/?#]+\/io\/web_service_json\.php$/.test(p.url)) throw new Error("Configure an HTTPS TDS endpoint ending in /io/web_service_json.php");
@@ -10,13 +14,13 @@ function config(): PollConfig {
     // The profile schema uses string enum values (DMP requires string enum items),
     // while the TDS JSON API expects a numeric media identifier.
     const media = typeof p.media === "string" && /^(3|6|7|16)$/.test(p.media) ? Number(p.media) : p.media;
-    if (![3, 6, 7, 16].includes(media)) throw new Error("Invalid media");
-    if (typeof p.unit !== "string" || !p.unit.trim() || p.unit.length > 30) throw new Error("Configure the verified measurement unit");
+    const unit = UNIT_BY_MEDIA[media];
+    if (!unit) throw new Error("Invalid media");
     if (!Number.isSafeInteger(p.startTimestamp) || p.startTimestamp < 0) throw new Error("Configure startTimestamp in Unix seconds");
     // JSON Schema defaults are UI hints, not guaranteed runtime values.
     const windowSeconds = p.windowSeconds ?? 3600;
     if (!Number.isSafeInteger(windowSeconds) || windowSeconds < 60 || windowSeconds > 86400) throw new Error("windowSeconds must be 60..86400");
-    return { ...p, media, windowSeconds } as PollConfig;
+    return { ...p, media, unit, windowSeconds } as PollConfig;
 }
 
 function fingerprint(c: PollConfig): string {
@@ -103,8 +107,9 @@ export function handleOnFetchResp(): void {
         return;
     }
     if (rows.length > 1000) { fail("Window returned >1000 values; reduce windowSeconds (cursor unchanged)"); return; }
-    const upstream: { type: "object"; object: Record<string, string | number> }[] = [];
+    const upstream: { type: "object"; timestamp: number; object: Record<string, string | number> }[] = [];
     let previous = pending.start - 1;
+
     for (const row of rows) {
         const t = Number(row?.timestamp), v = Number(row?.value);
         if (!Number.isSafeInteger(t) || t < pending.start || t > pending.end || t < previous || !["string", "number"].includes(typeof row.value) || (typeof row.value === "string" && !row.value.trim()) || !Number.isFinite(v)) {
@@ -113,9 +118,8 @@ export function handleOnFetchResp(): void {
         const sourceTimestampUs = t * 1000000;
         if (!Number.isSafeInteger(sourceTimestampUs)) { fail("Source timestamp exceeds safe microsecond precision (cursor unchanged)"); return; }
         previous = t;
-        upstream.push({ type: "object", object: {
+        upstream.push({ type: "object", timestamp: t * 1000, object: {
             source: "tetraedre", meteringCode: pending.meteringCode, media: pending.media,
-            // Payload fields only; upstream's message timestamp is assigned by FlintCORE.
             timestamp: t * 1000, sourceTimestampUs, value: v, unit: pending.unit,
         }});
     }

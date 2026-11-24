@@ -20,7 +20,7 @@ const now = 1710000000;
 const config = {
     url: 'https://example.test/io/web_service_json.php', username: 'user', dossierId: '123',
     encryptedPassword: '09da4e416785b0270a63e17e8b1313f4e29b814071892fe528060b17c1f0cf09',
-    meteringCode: 'AR_EXACT', media: '7', unit: 'mm', startTimestamp: now - 3600,
+    meteringCode: 'AR_EXACT', media: '7', startTimestamp: now - 3600,
     windowSeconds: 3600,
 };
 function invoke(event, { params = config, storage = {}, session = {}, fetchResp, service } = {}) {
@@ -69,6 +69,8 @@ test('official profile layout and named modules are consistent', () => {
     assert.equal(params.properties.encryptedPassword.$uiSchemaObject.security, 'secret');
     assert.equal(params.properties.media.type, 'string');
     assert.deepEqual(params.properties.media.enum, ['3', '6', '7', '16']);
+    assert.equal(params.properties.unit, undefined);
+    assert.ok(!params.required.includes('unit'));
     assert.deepEqual(services.map(s => s.name), ['checkAccess', 'pollNow']);
     for (const moduleName of ['main', 'poller', 'sha256', 'types']) {
         const source = readFileSync(`${__dirname}/${moduleName}.ts`, 'utf8');
@@ -114,6 +116,30 @@ test('omitted windowSeconds defaults to 3600 without accepting invalid explicit 
     }
 });
 
+test('media determines the OCEAU unit without a device unit parameter', () => {
+    const units = { '3': '°C', '6': 'm', '7': 'mm', '16': 'm3/s' };
+    for (const [media, unit] of Object.entries(units)) {
+        const params = { ...config, media }; // No device unit parameter.
+        const first = invoke('OnTick', { params });
+        const timestamp = now - 1;
+        const response = invoke('OnFetchResp', { session: first.session, fetchResp: {
+            statusCode: 200, body: { access_granted: 1, Values: [{ timestamp, value: '1.25' }] },
+        } });
+        assert.equal(response.result.operationalStatus, 'normal');
+        assert.equal(response.result.upstream[0].object.unit, unit);
+        assert.equal(response.result.upstream[0].timestamp, timestamp * 1000);
+        assert.equal(first.session.pending, undefined);
+        const imported = JSON.parse(convert({ access_granted: 1, Values: [{ timestamp, value: '1.25' }] }, {
+            deviceUuid: '11111111-2222-3333-4444-555555555555', meteringCode: 'AV_', media,
+            t0: now - 3600, t1: now,
+        })[0]);
+        assert.equal(JSON.parse(imported.data).unit, unit);
+    }
+    // An existing device may still carry the old parameter: it must be ignored.
+    const oldDevice = invoke('OnTick', { params: { ...config, unit: 'wrong-unit' } });
+    assert.equal(oldDevice.session.pending.unit, 'mm');
+});
+
 test('success publishes historic timestamps and advances cursor over inclusive windows', () => {
     const first = invoke('OnTick');
     const resp = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 200, body: { access_granted: 1, Values: [
@@ -122,6 +148,7 @@ test('success publishes historic timestamps and advances cursor over inclusive w
     assert.equal(resp.result.operationalStatus, 'normal');
     assert.ok(resp.result.upstream.every(m => m.type === 'object' && m.object));
     assert.deepEqual(plain(resp.result.upstream.map(m => m.object.value)), [0, 2.25]);
+    assert.deepEqual(plain(resp.result.upstream.map(m => m.timestamp)), [(now - 3000) * 1000, (now - 1) * 1000]);
     assert.equal(resp.result.upstream[0].object.timestamp, (now - 3000) * 1000);
     assert.equal(resp.result.upstream[0].object.sourceTimestampUs, (now - 3000) * 1000000);
     assert.equal(resp.result.upstream[0].object.unit, 'mm');
@@ -147,7 +174,7 @@ test('empty response advances; malformed, excessive, and denied responses do not
 });
 
 test('valid format-0 array publishes readings, but empty or malformed arrays never advance', () => {
-    const first = invoke('OnTick', { params: { ...config, meteringCode: 'AV_', media: '16', unit: 'm3/s' } });
+    const first = invoke('OnTick', { params: { ...config, meteringCode: 'AV_', media: '16' } });
     const seven = Array.from({ length: 7 }, (_, i) => ({
         timestamp: String(now - 3600 + i * 300), value: String(1.46 - i * 0.05),
     }));
@@ -155,6 +182,8 @@ test('valid format-0 array publishes readings, but empty or malformed arrays nev
     const ok = invoke('OnFetchResp', { session: { ...pending }, fetchResp: { statusCode: 200, body: seven } });
     assert.equal(ok.result.operationalStatus, 'normal');
     assert.equal(ok.result.upstream.length, 7);
+    assert.deepEqual(plain(ok.result.upstream.map((m, i) => m.timestamp)),
+        seven.map(row => Number(row.timestamp) * 1000));
     assert.equal(ok.result.upstream[0].object.meteringCode, 'AV_');
     assert.equal(ok.result.upstream[0].object.media, 16);
     assert.equal(ok.result.storage.nextTimestamp, now);
@@ -183,12 +212,12 @@ test('unexpected bodies report only their shape, never their content or credenti
 });
 
 test('AV_ from the station list is accepted verbatim as a metering code', () => {
-    const ctx = invoke('OnTick', { params: { ...config, meteringCode: 'AV_', media: '16', unit: 'm3/s' } });
+    const ctx = invoke('OnTick', { params: { ...config, meteringCode: 'AV_', media: '16' } });
     assert.equal(decodedFetch(ctx).metering_code, 'AV_');
     assert.equal(decodedFetch(ctx).media, 16);
     assert.equal(convert({ access_granted: 1, Values: [{ timestamp: now - 1, value: '0.21' }] }, {
         deviceUuid: '11111111-2222-3333-4444-555555555555', meteringCode: 'AV_',
-        media: '16', unit: 'm3/s', t0: now - 3600, t1: now,
+        media: '16', t0: now - 3600, t1: now,
     }).length, 1);
 });
 
@@ -203,7 +232,7 @@ test('HTTP failure and missing credentials cannot advance or fetch', () => {
 });
 
 test('historical JSONL uses the documented microsecond message timestamp', () => {
-    const options = { deviceUuid: '11111111-2222-3333-4444-555555555555', meteringCode: 'AR_EXACT', media: '7', unit: 'mm', t0: now - 3600, t1: now };
+    const options = { deviceUuid: '11111111-2222-3333-4444-555555555555', meteringCode: 'AR_EXACT', media: '7', t0: now - 3600, t1: now };
     const body = { access_granted: '1', Values: [{ timestamp: String(now - 2), value: '0' }, { timestamp: now, value: '2.25' }] };
     const lines = convert(body, options).map(line => JSON.parse(line));
     assert.equal(lines.length, 2);
@@ -221,13 +250,18 @@ test('historical JSONL uses the documented microsecond message timestamp', () =>
     assert.throws(() => convert({ access_granted: 0, Values: [] }, options));
     assert.throws(() => convert({ access_granted: 1, Values: [{ timestamp: now + 1, value: 5 }] }, options));
     assert.throws(() => convert({ access_granted: 1, Values: [{ timestamp: now, value: false }] }, options));
+    const level = { ...options, media: '6', unitOverride: 'm s.m.' };
+    const importedLevel = JSON.parse(convert({ access_granted: 1, Values: [{ timestamp: now - 1, value: '370.42' }] }, level)[0]);
+    assert.equal(JSON.parse(importedLevel.data).unit, 'm s.m.');
+    assert.throws(() => convert({ access_granted: 1, Values: [] }, { ...options, unitOverride: 'incorrect' }));
+    assert.throws(() => convert({ access_granted: 1, Values: [] }, { ...options, unitOverride: 'm s.m.' }));
 });
 
 test('backfill CLI writes JSONL only after validating the entire response', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tds-backfill-'));
     try {
         const path = join(dir, 'tds-response.json');
-        const cmd = [join(__dirname, 'backfill-jsonl.cjs'), '--device-uuid', '11111111-2222-3333-4444-555555555555', '--metering-code', 'AR_EXACT', '--media', '7', '--unit', 'mm', '--t0', String(now - 3600), '--t1', String(now), path];
+        const cmd = [join(__dirname, 'backfill-jsonl.cjs'), '--device-uuid', '11111111-2222-3333-4444-555555555555', '--metering-code', 'AR_EXACT', '--media', '7', '--t0', String(now - 3600), '--t1', String(now), path];
         writeFileSync(path, JSON.stringify({ access_granted: 1, Values: [{ timestamp: now - 1, value: '1' }] }));
         const ok = spawnSync(process.execPath, cmd, { encoding: 'utf8' });
         assert.equal(ok.status, 0, ok.stderr);
@@ -236,6 +270,17 @@ test('backfill CLI writes JSONL only after validating the entire response', () =
         const bad = spawnSync(process.execPath, cmd, { encoding: 'utf8' });
         assert.equal(bad.status, 1);
         assert.equal(bad.stdout, '');
+        writeFileSync(path, '');
+        const empty = spawnSync(process.execPath, cmd, { encoding: 'utf8' });
+        assert.equal(empty.status, 1);
+        assert.equal(empty.stdout, '');
+        assert.match(empty.stderr, /Input file is empty or contains no JSON/);
+        writeFileSync(path, 'SUPER_SECRET_TOKEN');
+        const invalid = spawnSync(process.execPath, cmd, { encoding: 'utf8' });
+        assert.equal(invalid.status, 1);
+        assert.equal(invalid.stdout, '');
+        assert.match(invalid.stderr, /Invalid JSON response file/);
+        assert.doesNotMatch(invalid.stderr, /SUPER_SECRET_TOKEN/);
     } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
