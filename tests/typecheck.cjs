@@ -10,7 +10,14 @@ const profileDir = join(__dirname, '..');
 const tempDir = mkdtempSync(join(tmpdir(), 'tds-typecheck-'));
 try {
     const globals = join(tempDir, 'globals.d.ts');
-    writeFileSync(globals, `declare const info: { params: unknown; storage: Record<string, unknown>; state: Record<string, unknown> };
+    writeFileSync(globals, `// FlintCORE generates required TypeScript properties even for optional state schema fields.
+interface DeviceState {
+    latestValue: number;
+    latestTimestampMs: number;
+    unit: string;
+    lastSuccessfulPollMs: number;
+}
+declare const info: { params: unknown; storage: Record<string, unknown>; state?: DeviceState };
 declare const args: {
     event: string;
     service?: Record<string, unknown>;
@@ -25,7 +32,7 @@ declare const result: {
     fetch?: unknown;
     upstream?: MessageBlock[];
     storage?: unknown;
-    state?: unknown;
+    state?: DeviceState;
     operationalStatus?: string;
     touch?: boolean;
 };

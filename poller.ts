@@ -127,7 +127,14 @@ export function handleOnFetchResp(): void {
     }
     if (upstream.length) result.upstream = upstream;
     // State is a UI/API snapshot; do not change the latest reading for an empty authorized window.
-    result.state = { ...(info.state || {}), ...(latest || {}), lastSuccessfulPollMs: Date.now() };
+    // FlintCORE's generated DeviceState type requires every declared field, even if the
+    // JSON schema permits an empty initial state. Narrow info.state before spreading it.
+    const pollTime = Date.now();
+    if (info.state) {
+        result.state = { ...info.state, ...(latest || {}), lastSuccessfulPollMs: pollTime };
+    } else if (latest) {
+        result.state = { ...latest, lastSuccessfulPollMs: pollTime };
+    }
     // Inclusive [t0,t1] ranges: +1 avoids duplicates at window boundaries.
     result.storage = { ...info.storage, fingerprint: pending.fingerprint, nextTimestamp: pending.end + 1 };
     result.operationalStatus = "normal";

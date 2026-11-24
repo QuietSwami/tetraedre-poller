@@ -168,6 +168,17 @@ test('success publishes historic timestamps and advances cursor over inclusive w
     assert.equal(decodedFetch(next).t1, now);
 });
 
+test('first validated reading creates complete state when no prior state exists', () => {
+    const tick = invoke('OnTick');
+    const response = invoke('OnFetchResp', { state: null, session: tick.session, fetchResp: {
+        statusCode: 200, body: { access_granted: 1, Values: [{ timestamp: now - 1, value: '0' }] },
+    } });
+    assert.deepEqual(plain(response.result.state), {
+        latestValue: 0, latestTimestampMs: (now - 1) * 1000,
+        unit: 'mm', lastSuccessfulPollMs: now * 1000,
+    });
+});
+
 test('empty response advances; malformed, excessive, and denied responses do not', () => {
     const first = invoke('OnTick');
     const pending = { ...first.session };
