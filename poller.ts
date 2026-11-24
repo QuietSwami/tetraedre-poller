@@ -109,6 +109,7 @@ export function handleOnFetchResp(): void {
     if (rows.length > 1000) { fail("Window returned >1000 values; reduce windowSeconds (cursor unchanged)"); return; }
     const upstream: { type: "object"; timestamp: number; object: Record<string, string | number> }[] = [];
     let previous = pending.start - 1;
+    let latest: { latestValue: number; latestTimestampMs: number; unit: string } | undefined;
 
     for (const row of rows) {
         const t = Number(row?.timestamp), v = Number(row?.value);
@@ -118,12 +119,15 @@ export function handleOnFetchResp(): void {
         const sourceTimestampUs = t * 1000000;
         if (!Number.isSafeInteger(sourceTimestampUs)) { fail("Source timestamp exceeds safe microsecond precision (cursor unchanged)"); return; }
         previous = t;
+        latest = { latestValue: v, latestTimestampMs: t * 1000, unit: pending.unit };
         upstream.push({ type: "object", timestamp: t * 1000, object: {
             source: "tetraedre", meteringCode: pending.meteringCode, media: pending.media,
             timestamp: t * 1000, sourceTimestampUs, value: v, unit: pending.unit,
         }});
     }
     if (upstream.length) result.upstream = upstream;
+    // State is a UI/API snapshot; do not change the latest reading for an empty authorized window.
+    result.state = { ...(info.state || {}), ...(latest || {}), lastSuccessfulPollMs: Date.now() };
     // Inclusive [t0,t1] ranges: +1 avoids duplicates at window boundaries.
     result.storage = { ...info.storage, fingerprint: pending.fingerprint, nextTimestamp: pending.end + 1 };
     result.operationalStatus = "normal";

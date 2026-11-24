@@ -23,9 +23,9 @@ const config = {
     meteringCode: 'AR_EXACT', media: '7', startTimestamp: now - 3600,
     windowSeconds: 3600,
 };
-function invoke(event, { params = config, storage = {}, session = {}, fetchResp, service } = {}) {
+function invoke(event, { params = config, storage = {}, state = {}, session = {}, fetchResp, service } = {}) {
     const context = {
-        args: { event, fetchResp, service }, info: { params, storage }, result: {}, session,
+        args: { event, fetchResp, service }, info: { params, storage, state }, result: {}, session,
         logs: [], Date: class extends Date { static now() { return now * 1000; } },
         log(message) { context.logs.push(message); },
     };
@@ -71,6 +71,10 @@ test('official profile layout and named modules are consistent', () => {
     assert.deepEqual(params.properties.media.enum, ['3', '6', '7', '16']);
     assert.equal(params.properties.unit, undefined);
     assert.ok(!params.required.includes('unit'));
+    const state = JSON.parse(readFileSync(`${__dirname}/stateSchema.json`, 'utf8'));
+    assert.equal(state.type, 'object');
+    assert.deepEqual(Object.keys(state.properties), ['latestValue', 'latestTimestampMs', 'unit', 'lastSuccessfulPollMs']);
+    assert.equal(state.required, undefined);
     assert.deepEqual(services.map(s => s.name), ['checkAccess', 'pollNow']);
     for (const moduleName of ['main', 'poller', 'sha256', 'types']) {
         const source = readFileSync(`${__dirname}/${moduleName}.ts`, 'utf8');
@@ -142,7 +146,9 @@ test('media determines the OCEAU unit without a device unit parameter', () => {
 
 test('success publishes historic timestamps and advances cursor over inclusive windows', () => {
     const first = invoke('OnTick');
-    const resp = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 200, body: { access_granted: 1, Values: [
+    const resp = invoke('OnFetchResp', { session: first.session, state: {
+        latestValue: 99, latestTimestampMs: (now - 5000) * 1000, unit: 'mm',
+    }, fetchResp: { statusCode: 200, body: { access_granted: 1, Values: [
         { timestamp: now - 3000 + '', value: '0' }, { timestamp: now - 1, value: '2.25' },
     ] } } });
     assert.equal(resp.result.operationalStatus, 'normal');
@@ -152,6 +158,10 @@ test('success publishes historic timestamps and advances cursor over inclusive w
     assert.equal(resp.result.upstream[0].object.timestamp, (now - 3000) * 1000);
     assert.equal(resp.result.upstream[0].object.sourceTimestampUs, (now - 3000) * 1000000);
     assert.equal(resp.result.upstream[0].object.unit, 'mm');
+    assert.deepEqual(plain(resp.result.state), {
+        latestValue: 2.25, latestTimestampMs: (now - 1) * 1000,
+        unit: 'mm', lastSuccessfulPollMs: now * 1000,
+    });
     assert.equal(resp.result.storage.nextTimestamp, now);
     const next = invoke('OnTick', { storage: resp.result.storage });
     assert.equal(decodedFetch(next).t0, now);
@@ -160,16 +170,27 @@ test('success publishes historic timestamps and advances cursor over inclusive w
 
 test('empty response advances; malformed, excessive, and denied responses do not', () => {
     const first = invoke('OnTick');
-    const good = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 200, body: JSON.stringify({ access_granted: 1, Values: [] }) } });
+    const pending = { ...first.session };
+    const good = invoke('OnFetchResp', { session: { ...pending }, state: {
+        latestValue: 0, latestTimestampMs: (now - 4000) * 1000, unit: 'mm',
+    }, fetchResp: { statusCode: 200, body: JSON.stringify({ access_granted: 1, Values: [] }) } });
     assert.equal(good.result.storage.nextTimestamp, now);
+    assert.deepEqual(plain(good.result.state), {
+        latestValue: 0, latestTimestampMs: (now - 4000) * 1000, unit: 'mm', lastSuccessfulPollMs: now * 1000,
+    });
+    const noPriorReading = invoke('OnFetchResp', { session: { ...pending }, fetchResp: {
+        statusCode: 200, body: { access_granted: 1, Values: [] },
+    } });
+    assert.deepEqual(plain(noPriorReading.result.state), { lastSuccessfulPollMs: now * 1000 });
     for (const body of [[], '[]', '42', '{broken', { access_granted: 0, Values: [] }, { access_granted: 1, Values: [{ timestamp: now + 2, value: '1' }] },
         { access_granted: 1, Values: [{ timestamp: now - 1, value: null }] },
         { access_granted: 1, Values: [{ timestamp: now - 1, value: false }] },
         { access_granted: 1, Values: Array.from({ length: 1001 }, () => ({ timestamp: now - 1, value: 1 })) }]) {
-        const resp = invoke('OnFetchResp', { session: { ...first.session }, fetchResp: { statusCode: 200, body } });
+        const resp = invoke('OnFetchResp', { session: { ...pending }, fetchResp: { statusCode: 200, body } });
         assert.equal(resp.result.operationalStatus, 'warning');
         assert.equal(resp.result.storage, undefined);
         assert.equal(resp.result.upstream, undefined);
+        assert.equal(resp.result.state, undefined);
     }
 });
 
@@ -186,12 +207,16 @@ test('valid format-0 array publishes readings, but empty or malformed arrays nev
         seven.map(row => Number(row.timestamp) * 1000));
     assert.equal(ok.result.upstream[0].object.meteringCode, 'AV_');
     assert.equal(ok.result.upstream[0].object.media, 16);
+    assert.equal(ok.result.state.latestValue, Number(seven[6].value));
+    assert.equal(ok.result.state.latestTimestampMs, Number(seven[6].timestamp) * 1000);
+    assert.equal(ok.result.state.unit, 'm3/s');
     assert.equal(ok.result.storage.nextTimestamp, now);
     for (const body of [[], [{ error: 'denied' }], [seven[0], { timestamp: now + 1, value: '1' }]]) {
         const bad = invoke('OnFetchResp', { session: { ...pending }, fetchResp: { statusCode: 200, body } });
         assert.equal(bad.result.operationalStatus, 'warning');
         assert.equal(bad.result.upstream, undefined);
         assert.equal(bad.result.storage, undefined);
+        assert.equal(bad.result.state, undefined);
         if (body.length === 0) assert.match(bad.logs[0], /Empty format-0 response/);
     }
 });
@@ -290,4 +315,5 @@ test('checkAccess verifies export_data and does not move cursor', () => {
     const resp = invoke('OnFetchResp', { session: first.session, fetchResp: { statusCode: 200, body: JSON.stringify({ access_granted: 1, export_data: '1' }) } });
     assert.equal(resp.result.operationalStatus, 'normal');
     assert.equal(resp.result.storage, undefined);
+    assert.equal(resp.result.state, undefined);
 });

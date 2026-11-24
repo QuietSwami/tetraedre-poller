@@ -10,7 +10,7 @@ const profileDir = join(__dirname, '..');
 const tempDir = mkdtempSync(join(tmpdir(), 'tds-typecheck-'));
 try {
     const globals = join(tempDir, 'globals.d.ts');
-    writeFileSync(globals, `declare const info: { params: unknown; storage: Record<string, unknown> };
+    writeFileSync(globals, `declare const info: { params: unknown; storage: Record<string, unknown>; state: Record<string, unknown> };
 declare const args: {
     event: string;
     service?: Record<string, unknown>;
@@ -25,6 +25,7 @@ declare const result: {
     fetch?: unknown;
     upstream?: MessageBlock[];
     storage?: unknown;
+    state?: unknown;
     operationalStatus?: string;
     touch?: boolean;
 };

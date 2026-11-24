@@ -1,1 +1,27 @@
-{}
+{
+  "type": "object",
+  "properties": {
+    "latestValue": {
+      "type": "number",
+      "title": "Latest reading",
+      "description": "Value of the most recent validated TDS measurement."
+    },
+    "latestTimestampMs": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "Latest measurement time (Unix ms)",
+      "description": "Original TDS measurement timestamp in Unix milliseconds."
+    },
+    "unit": {
+      "type": "string",
+      "title": "Unit",
+      "description": "Label derived from the media of the latest reading; not a conversion."
+    },
+    "lastSuccessfulPollMs": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "Last successful poll (Unix ms)",
+      "description": "Time a valid get_values response was processed, even if no readings were returned."
+    }
+  }
+}
